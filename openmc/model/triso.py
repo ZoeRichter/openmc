@@ -399,9 +399,8 @@ class _RectangularPrism(_Container):
                 uniform(ll[1], ul[1]),
                 uniform(ll[2], ul[2])]
 
-    def enforce_bounds(self, p, q):
+    def enforce_bounds(self, p):
         p[:] = np.clip(p, self.limits[0], self.limits[1])
-        q[:] = np.clip(q, self.limits[0], self.limits[1]) 
 
     def repel_spheres(self, p, q, d, d_new):
         # Moving each sphere distance 's' away from the other along the line
@@ -416,7 +415,18 @@ class _RectangularPrism(_Container):
         # Enforce the rigid boundary by moving each sphere back along the
         # surface normal until it is completely within the container if it
         # overlaps the surface
-        self.enforce_bounds(p, q)
+        self.enforce_bounds(p)
+        self.enforce_bounds(q)
+
+    def perturb_spheres(self, p, perturb_amp):
+        # Generate random unit vector, move p a distance perturb_amp
+        # along it
+        u_dir = np.array([gauss(0,1), gauss(0,1), gauss(0,1)])
+        u_perturb = u_dir/(sum(u_dir**2)**0.5)
+        p += u_perturb*perturb_amp
+
+        # Enforce bounds
+        self.enforce_bounds(p)
 
 
 class _Cylinder(_Container):
@@ -607,7 +617,7 @@ class _Cylinder(_Container):
         p[k] = uniform(ll[0], ul[0])
         return p
 
-    def enforce_bounds(self, p, q):
+    def enforce_bounds(self, p):
         ll, ul = self.limits
         c = self.center
         i, j, k = self.shift
@@ -616,13 +626,7 @@ class _Cylinder(_Container):
         if r > ul[1]:
             p[i] = (p[i] - c[i])*ul[1]/r + c[i]
             p[j] = (p[j] - c[j])*ul[1]/r + c[j]
-        p[k] = np.clip(p[k], ll[0], ul[0])
-
-        r = sqrt((q[i] - c[i])**2 + (q[j] - c[j])**2)
-        if r > ul[1]:
-            q[i] = (q[i] - c[i])*ul[1]/r + c[i]
-            q[j] = (q[j] - c[j])*ul[1]/r + c[j]
-        q[k] = np.clip(q[k], ll[0], ul[0])
+        p[k] = np.clip(p[k], ll[0], ul[0]
 
 
     def repel_spheres(self, p, q, d, d_new):
@@ -638,7 +642,18 @@ class _Cylinder(_Container):
         # Enforce the rigid boundary by moving each sphere back along the
         # surface normal until it is completely within the container if it
         # overlaps the surface
-        self.enforce_bounds(p, q)
+        self.enforce_bounds(p)
+        self.enforce_bounds(q)
+
+    def perturb_spheres(self, p, perturb_amp):
+        # Generate random unit vector, move p a distance perturb_amp
+        # along it
+        u_dir = np.array([gauss(0,1), gauss(0,1), gauss(0,1)])
+        u_perturb = u_dir/(sum(u_dir**2)**0.5)
+        p += u_perturb*perturb_amp
+
+        # Enforce bounds
+        self.enforce_bounds(p)
 
 
 class _SphericalShell(_Container):
@@ -780,7 +795,7 @@ class _SphericalShell(_Container):
         r = (uniform(ll[0]**3, ul[0]**3)**(1/3)/sqrt(x**2 + y**2 + z**2))
         return [r*x + c[0],  r*y + c[1], r*z + c[2]]
 
-    def enforce_bounds(self, p, q):
+    def enforce_bounds(self, p):
         c = self.center
         ll, ul = self.limits
 
@@ -789,12 +804,6 @@ class _SphericalShell(_Container):
             p[:] = (p - c)*ul[0]/r + c
         elif r < ll[0]:
             p[:] = (p - c)*ll[0]/r + c
-
-        r = sqrt((q[0] - c[0])**2 + (q[1] - c[1])**2 + (q[2] - c[2])**2)
-        if r > ul[0]:
-            q[:] = (q - c)*ul[0]/r + c
-        elif r < ll[0]:
-            q[:] = (q - c)*ll[0]/r + c 
 
     def repel_spheres(self, p, q, d, d_new):
         # Moving each sphere distance 's' away from the other along the line
@@ -809,7 +818,18 @@ class _SphericalShell(_Container):
         # Enforce the rigid boundary by moving each sphere back along the
         # surface normal until it is completely within the container if it
         # overlaps the surface
-        self.enforce_bounds(p,q)
+        self.enforce_bounds(p)
+        self.enforce_bounds(q)
+
+    def perturb_spheres(self, p, perturb_amp):
+        # Generate random unit vector, move p a distance perturb_amp
+        # along it
+        u_dir = np.array([gauss(0,1), gauss(0,1), gauss(0,1)])
+        u_perturb = u_dir/(sum(u_dir**2)**0.5)
+        p += u_perturb*perturb_amp
+
+        # Enforce bounds
+        self.enforce_bounds(p)
 
 
 def create_triso_lattice(trisos, lower_left, pitch, shape, background):
@@ -928,7 +948,8 @@ def _random_sequential_pack(domain, num_spheres):
     return np.array(spheres)
 
 
-def _close_random_pack(domain, spheres, contraction_rate):
+def _close_random_pack(domain, spheres, contraction_rate, shake, perturb_freq,
+                       perturb_amp):
     """Close random packing of spheres using the Jodrey-Tory algorithm.
 
     Parameters
@@ -1172,7 +1193,7 @@ def _close_random_pack(domain, spheres, contraction_rate):
             mesh[idx].add(i)
             mesh_map[i].add(idx)
     
-    count = 0
+    count = 0.0
     while True:
         # Rebuild the sorted list of rods according to the current sphere
         # configuration
@@ -1217,21 +1238,18 @@ def _close_random_pack(domain, spheres, contraction_rate):
             if inner_diameter >= diameter or inner_diameter >= outer_diameter:
                 break
         
-        #add perturb step here - you don't need it first pass, and you want
-        #it before the create_rod_list() step so that it can capture the
-        #change in sphere configuration from perturb
+        # Shake the spheres every perturb_freq steps, to help keep higher pf
+        # packings from getting 'stuck'.
+        if shake and count%perturb_freq == 0.0:
+            for p in spheres:
+                domain.perturb(p, perturb_amp)
 
-        #commented out code
-
-        #if shake:
-            #if count%perturb_freq == 0.0:
-                #spheres = [domain.perturb(p, perturb_amp) for p in spheres]
-
-        #count +=1
+        count +=1
 
 
 def pack_spheres(radius, region, pf=None, num_spheres=None, initial_pf=0.3,
-                 contraction_rate=1.e-3, seed=None):
+                 contraction_rate=1.e-3, seed=None, shake=False,
+                 perturb_freq=1, perturb_amp=0.0):
     """Generate a random, non-overlapping configuration of spheres within a
     container.
 
@@ -1261,6 +1279,14 @@ def pack_spheres(radius, region, pf=None, num_spheres=None, initial_pf=0.3,
         longer to converge.
     seed : int, optional
         Pseudorandom number generator seed passed to :func:`random.seed`
+    shake : bool, optional
+        Flag for whether or not spheres should undergo a random "shake" step.
+        Likely unneccessary for lower packing fractions.
+    perturb_freq : int, optional
+        Frequency with which spheres will be shaken, if shake=True.  Sphere
+        centroids will be perturbed every N steps, where N = perturb_freq
+    perturb_amp : float, optional
+        Distance sphere centroids will be perturbed when shaken 
 
     Returns
     ------
