@@ -1390,6 +1390,7 @@ def pack_spheres(radius, region, pf=None, num_spheres=None, initial_pf=0.3,
     # radius
     if initial_pf != pf:
         domain.sphere_radius = radius
-        _close_random_pack(domain, spheres, contraction_rate)
+        _close_random_pack(domain, spheres, contraction_rate, shake,
+                           perturb_freq, perturb_amp)
 
     return spheres
