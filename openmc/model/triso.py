@@ -399,6 +399,10 @@ class _RectangularPrism(_Container):
                 uniform(ll[1], ul[1]),
                 uniform(ll[2], ul[2])]
 
+    def enforce_bounds(self, p, q):
+        p[:] = np.clip(p, self.limits[0], self.limits[1])
+        q[:] = np.clip(q, self.limits[0], self.limits[1]) 
+
     def repel_spheres(self, p, q, d, d_new):
         # Moving each sphere distance 's' away from the other along the line
         # joining the sphere centers will ensure their final distance is
@@ -412,8 +416,7 @@ class _RectangularPrism(_Container):
         # Enforce the rigid boundary by moving each sphere back along the
         # surface normal until it is completely within the container if it
         # overlaps the surface
-        p[:] = np.clip(p, self.limits[0], self.limits[1])
-        q[:] = np.clip(q, self.limits[0], self.limits[1])
+        self.enforce_bounds(p, q)
 
 
 class _Cylinder(_Container):
@@ -604,19 +607,7 @@ class _Cylinder(_Container):
         p[k] = uniform(ll[0], ul[0])
         return p
 
-    def repel_spheres(self, p, q, d, d_new):
-        # Moving each sphere distance 's' away from the other along the line
-        # joining the sphere centers will ensure their final distance is
-        # equal to the outer diameter
-        s = (d_new - d)/2
-
-        v = (p - q)/d
-        p += s*v
-        q -= s*v
-
-        # Enforce the rigid boundary by moving each sphere back along the
-        # surface normal until it is completely within the container if it
-        # overlaps the surface
+    def enforce_bounds(self, p, q):
         ll, ul = self.limits
         c = self.center
         i, j, k = self.shift
@@ -632,6 +623,22 @@ class _Cylinder(_Container):
             q[i] = (q[i] - c[i])*ul[1]/r + c[i]
             q[j] = (q[j] - c[j])*ul[1]/r + c[j]
         q[k] = np.clip(q[k], ll[0], ul[0])
+
+
+    def repel_spheres(self, p, q, d, d_new):
+        # Moving each sphere distance 's' away from the other along the line
+        # joining the sphere centers will ensure their final distance is
+        # equal to the outer diameter
+        s = (d_new - d)/2
+
+        v = (p - q)/d
+        p += s*v
+        q -= s*v
+
+        # Enforce the rigid boundary by moving each sphere back along the
+        # surface normal until it is completely within the container if it
+        # overlaps the surface
+        self.enforce_bounds(p, q)
 
 
 class _SphericalShell(_Container):
@@ -773,19 +780,7 @@ class _SphericalShell(_Container):
         r = (uniform(ll[0]**3, ul[0]**3)**(1/3)/sqrt(x**2 + y**2 + z**2))
         return [r*x + c[0],  r*y + c[1], r*z + c[2]]
 
-    def repel_spheres(self, p, q, d, d_new):
-        # Moving each sphere distance 's' away from the other along the line
-        # joining the sphere centers will ensure their final distance is
-        # equal to the outer diameter
-        s = (d_new - d)/2
-
-        v = (p - q)/d
-        p += s*v
-        q -= s*v
-
-        # Enforce the rigid boundary by moving each sphere back along the
-        # surface normal until it is completely within the container if it
-        # overlaps the surface
+    def enforce_bounds(self, p, q):
         c = self.center
         ll, ul = self.limits
 
@@ -799,7 +794,22 @@ class _SphericalShell(_Container):
         if r > ul[0]:
             q[:] = (q - c)*ul[0]/r + c
         elif r < ll[0]:
-            q[:] = (q - c)*ll[0]/r + c
+            q[:] = (q - c)*ll[0]/r + c 
+
+    def repel_spheres(self, p, q, d, d_new):
+        # Moving each sphere distance 's' away from the other along the line
+        # joining the sphere centers will ensure their final distance is
+        # equal to the outer diameter
+        s = (d_new - d)/2
+
+        v = (p - q)/d
+        p += s*v
+        q -= s*v
+
+        # Enforce the rigid boundary by moving each sphere back along the
+        # surface normal until it is completely within the container if it
+        # overlaps the surface
+        self.enforce_bounds(p,q)
 
 
 def create_triso_lattice(trisos, lower_left, pitch, shape, background):
@@ -1161,7 +1171,8 @@ def _close_random_pack(domain, spheres, contraction_rate):
         for idx in domain.nearby_mesh_cells(spheres[i]):
             mesh[idx].add(i)
             mesh_map[i].add(idx)
-
+    
+    count = 0
     while True:
         # Rebuild the sorted list of rods according to the current sphere
         # configuration
@@ -1205,6 +1216,18 @@ def _close_random_pack(domain, spheres, contraction_rate):
             inner_diameter = rods[0][0]
             if inner_diameter >= diameter or inner_diameter >= outer_diameter:
                 break
+        
+        #add perturb step here - you don't need it first pass, and you want
+        #it before the create_rod_list() step so that it can capture the
+        #change in sphere configuration from perturb
+
+        #commented out code
+
+        #if shake:
+            #if count%perturb_freq == 0.0:
+                #spheres = [domain.perturb(p, perturb_amp) for p in spheres]
+
+        #count +=1
 
 
 def pack_spheres(radius, region, pf=None, num_spheres=None, initial_pf=0.3,
