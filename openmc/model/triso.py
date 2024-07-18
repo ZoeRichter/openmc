@@ -626,7 +626,7 @@ class _Cylinder(_Container):
         if r > ul[1]:
             p[i] = (p[i] - c[i])*ul[1]/r + c[i]
             p[j] = (p[j] - c[j])*ul[1]/r + c[j]
-        p[k] = np.clip(p[k], ll[0], ul[0]
+        p[k] = np.clip(p[k], ll[0], ul[0])
 
 
     def repel_spheres(self, p, q, d, d_new):
